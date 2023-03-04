@@ -4,9 +4,11 @@
 from typing import List
 
 import torch
+import traceback
 
 from llama.tokenizer import Tokenizer
 from llama.model import Transformer
+from tqdm import tnrange
 
 
 class LLaMA:
@@ -32,13 +34,15 @@ class LLaMA:
 
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
 
-        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).cuda().long()
+        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).long()
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
+            tokens[k, -1] = self.tokenizer.eos_id
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0
-        for cur_pos in range(start_pos, total_len):
+        decoded = [None] * bsz
+        for cur_pos in tnrange(start_pos, total_len, desc="forward"):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
@@ -53,16 +57,27 @@ class LLaMA:
             tokens[:, cur_pos] = next_token
             prev_pos = cur_pos
 
-        decoded = []
-        for i, t in enumerate(tokens.tolist()):
-            # cut to max gen len
-            t = t[: len(prompt_tokens[i]) + max_gen_len]
-            # cut to eos tok if any
-            try:
-                t = t[: t.index(self.tokenizer.eos_id)]
-            except ValueError:
-                pass
-            decoded.append(self.tokenizer.decode(t))
+            print("-" * 30)
+            for i, t in enumerate(tokens.tolist()):
+                # i = cur_pos
+                # t = next_token
+                # cut to max gen len
+                # t = t[: len(pr-ompt_tokens[i]) + max_gen_len]
+                t = t[: min(cur_pos, len(prompt_tokens[i]) + max_gen_len)]
+                # cut to eos tok if any
+                try:
+                    t = t[: t.index(self.tokenizer.eos_id)]
+                except ValueError:
+                    pass  # traceback.print_exc()
+                try:
+                    d = self.tokenizer.decode(t)
+                    print([i] * 20)
+                    print(d)
+                    decoded[i] = d
+                except IndexError:
+                    traceback.print_exc()
+                    print(t)
+            print("-" * 30)
         return decoded
 
 
