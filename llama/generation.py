@@ -49,7 +49,7 @@ class LLaMA:
                 next_token = sample_top_p(probs, top_p)
             else:
                 next_token = torch.argmax(logits, dim=-1)
-            next_token = next_token.reshape(-1)
+            next_token = next_token.reshape(-1).cpu()
             # only replace token if prompt has already been generated
             next_token = torch.where(
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token

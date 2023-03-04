@@ -97,10 +97,10 @@ class Attention(nn.Module):
 
         self.cache_k = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        )  # .cuda()
+        ).cuda()
         self.cache_v = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        )  # .cuda()
+        ).cuda()
 
     def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
         bsz, seqlen, _ = x.shape
@@ -186,6 +186,23 @@ class TransformerBlock(nn.Module):
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
 
+# https://github.com/gmorenz/llama/commit/4daf7f1a2f2bb22208b5d464bc2a18511d54408d
+def move_parameters_to_gpu(module):
+    if not hasattr(module, "saved"):
+        module.saved = module._parameters.copy()
+    for k, param in module.saved.items():
+        if param is not None:
+            module._parameters[k] = param.to("cuda", non_blocking=True)
+    for child in module.children():
+        move_parameters_to_gpu(child)
+
+def move_parameters_to_cpu(module):
+    for k, param in module.saved.items():
+        del module._parameters[k]
+        module._parameters[k] = param
+    for child in module.children():
+        move_parameters_to_cpu(child)
+
 
 class Transformer(nn.Module):
     def __init__(self, params: ModelArgs):
@@ -205,16 +222,16 @@ class Transformer(nn.Module):
 
         self.layer_locations = [None] * len(self.layers)
 
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = RMSNorm(params.dim, eps=params.norm_eps).cuda()
         self.output = nn.Linear(
             params.dim,
             params.vocab_size,
             bias=False,
-        )
+        ).cuda()
 
         self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
-        )
+        ).cuda()
 
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: int):
@@ -222,11 +239,10 @@ class Transformer(nn.Module):
 
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
-        self.freqs_cis = self.freqs_cis.to(h.device)
+        self.freqs_cis = self.freqs_cis
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
         if use_gpu:
             h = h.cuda()
-            freqs_cis = freqs_cis.cuda()
 
         mask = None
         if seqlen > 1:
@@ -240,17 +256,14 @@ class Transformer(nn.Module):
 
         for layer in tqdm(self.layers, desc="flayers", leave=True):
             if use_gpu:
-                torch.cuda.empty_cache()
-                layer.cuda()
+                move_parameters_to_gpu(layer)
             h = layer(h, start_pos, freqs_cis, mask)
             if use_gpu:
-                layer.cpu()
+                move_parameters_to_cpu(layer)
 
+        h = self.norm(h)
         if use_gpu:
             del mask
-            del freqs_cis
             torch.cuda.empty_cache()
-            h = h.cpu()
-        h = self.norm(h)
         output = self.output(h[:, -1, :])  # only compute last logits
         return output.float()
