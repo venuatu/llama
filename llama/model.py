@@ -218,18 +218,39 @@ class Transformer(nn.Module):
 
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: int):
+        use_gpu = True  # start_pos == 0
+
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
+        if use_gpu:
+            h = h.cuda()
+            freqs_cis = freqs_cis.cuda()
 
         mask = None
         if seqlen > 1:
-            mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=tokens.device)
+            mask = torch.full(
+                (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
+            )
             mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        for layer in self.layers:
+        if use_gpu and mask is not None:
+            mask = mask.cuda()
+
+        for layer in tqdm(self.layers, desc="flayers", leave=True):
+            if use_gpu:
+                torch.cuda.empty_cache()
+                layer.cuda()
             h = layer(h, start_pos, freqs_cis, mask)
+            if use_gpu:
+                layer.cpu()
+
+        if use_gpu:
+            del mask
+            del freqs_cis
+            torch.cuda.empty_cache()
+            h = h.cpu()
         h = self.norm(h)
         output = self.output(h[:, -1, :])  # only compute last logits
         return output.float()
