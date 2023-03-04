@@ -8,7 +8,7 @@ import traceback
 
 from llama.tokenizer import Tokenizer
 from llama.model import Transformer
-from tqdm import tnrange
+from tqdm import trange
 
 
 class LLaMA:
@@ -42,7 +42,7 @@ class LLaMA:
         start_pos = min_prompt_size
         prev_pos = 0
         decoded = [None] * bsz
-        for cur_pos in tnrange(start_pos, total_len, desc="forward"):
+        for cur_pos in trange(start_pos, total_len, desc="forward"):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
