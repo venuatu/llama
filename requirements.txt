@@ -3,3 +3,4 @@ fairscale
 fire
 sentencepiece
 tqdm
+pyarrow
