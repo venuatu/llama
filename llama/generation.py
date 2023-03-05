@@ -34,7 +34,7 @@ class LLaMA:
 
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
 
-        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).long()
+        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).cuda().long()
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
             tokens[k, -1] = self.tokenizer.eos_id
@@ -52,7 +52,7 @@ class LLaMA:
             next_token = next_token.reshape(-1).cpu()
             # only replace token if prompt has already been generated
             next_token = torch.where(
-                input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
+                input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token.cuda()
             )
             tokens[:, cur_pos] = next_token
             prev_pos = cur_pos
