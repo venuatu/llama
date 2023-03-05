@@ -8,6 +8,7 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.utils import skip_init
 
 from tqdm import tqdm
 
@@ -74,22 +75,22 @@ class Attention(nn.Module):
         self.n_local_heads = args.n_heads  # // fs_init.get_model_parallel_world_size()
         self.head_dim = args.dim // args.n_heads
 
-        self.wq = nn.Linear(
+        self.wq = skip_init(nn.Linear,
             args.dim,
             args.n_heads * self.head_dim,
             bias=False,
         )
-        self.wk = nn.Linear(
+        self.wk = skip_init(nn.Linear,
             args.dim,
             args.n_heads * self.head_dim,
             bias=False,
         )
-        self.wv = nn.Linear(
+        self.wv = skip_init(nn.Linear,
             args.dim,
             args.n_heads * self.head_dim,
             bias=False,
         )
-        self.wo = nn.Linear(
+        self.wo = skip_init(nn.Linear,
             args.n_heads * self.head_dim,
             args.dim,
             bias=False,
@@ -147,17 +148,17 @@ class FeedForward(nn.Module):
         hidden_dim = int(2 * hidden_dim / 3)
         hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
-        self.w1 = nn.Linear(
+        self.w1 = skip_init(nn.Linear,
             dim,
             hidden_dim,
             bias=False,
         )
-        self.w2 = nn.Linear(
+        self.w2 = skip_init(nn.Linear,
             hidden_dim,
             dim,
             bias=False,
         )
-        self.w3 = nn.Linear(
+        self.w3 = skip_init(nn.Linear,
             dim,
             hidden_dim,
             bias=False,
@@ -211,7 +212,7 @@ class Transformer(nn.Module):
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
 
-        self.tok_embeddings = nn.Embedding(
+        self.tok_embeddings = skip_init(nn.Embedding,
             params.vocab_size,
             params.dim,
         )
@@ -223,7 +224,7 @@ class Transformer(nn.Module):
         self.layer_locations = [None] * len(self.layers)
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps).cuda()
-        self.output = nn.Linear(
+        self.output = skip_init(nn.Linear,
             params.dim,
             params.vocab_size,
             bias=False,
